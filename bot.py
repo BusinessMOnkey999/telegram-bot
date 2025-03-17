@@ -66,11 +66,13 @@ def error(update, context):
     logger.warning(f"Update {update} caused error {context.error}")
 
 def main():
-    # Get the bot token from Heroku environment variables
+    # Get the bot token from environment variables
     TOKEN = os.environ.get('TOKEN')
-    PORT = int(os.environ.get('PORT', '8443'))
-    APP_NAME = os.environ.get('APP_NAME')
+    if not TOKEN:
+        logger.error("No TOKEN provided. Set the TOKEN environment variable.")
+        return
 
+    PORT = int(os.environ.get('PORT', '8443'))
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
 
@@ -87,8 +89,21 @@ def main():
     dp.add_handler(conv_handler)
     dp.add_error_handler(error)
 
-    # Start the bot using a webhook for Heroku
-    updater.start_webhook(listen="0.0.0.0", port=PORT, url_path=TOKEN, webhook_url=f"{APP_NAME}/{TOKEN}")
+    # Get the Render hostname or use a placeholder
+    hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'your-app-name.onrender.com')
+    webhook_url = f"https://{hostname}/{TOKEN}"
+    logger.info(f"Setting webhook to: {webhook_url}")
+
+    try:
+        # Start the bot using a webhook
+        updater.start_webhook(listen="0.0.0.0", port=PORT, url_path=TOKEN, webhook_url=webhook_url)
+        logger.info("Webhook set successfully!")
+    except Exception as e:
+        logger.error(f"Failed to set webhook: {e}")
+        # Fallback to polling if webhook fails
+        logger.info("Falling back to polling...")
+        updater.start_polling()
+    
     updater.idle()
 
 if __name__ == '__main__':
