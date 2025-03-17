@@ -93,7 +93,7 @@ def code(update, context):
     correct_code = context.user_data.get('code')
     if entered_code == correct_code:
         # Generate a temporary invite link for the group
-        group_id = os.environ.get('GROUP_ID')  # Set this in Render environment variables
+        group_id = os.environ.get('GROUP_ID')
         if not group_id:
             logger.error("GROUP_ID not set in environment variables.")
             update.message.reply_text("Verification successful, but GROUP_ID is not set. Please contact the admin.")
@@ -152,4 +152,30 @@ def main():
             CallbackQueryHandler(verify_callback, pattern='verify')
         ],
         states={
-            PHONE: [MessageHandler(Filters.text & ~Filters.command
+            PHONE: [MessageHandler(Filters.text & ~Filters.command, phone)],
+            CODE: [MessageHandler(Filters.text & ~Filters.command, code)]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)]
+    )
+
+    dp.add_handler(conv_handler)
+    dp.add_error_handler(error)
+
+    # Get the Render hostname or use a placeholder
+    hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'your-app-name.onrender.com')
+    webhook_url = f"https://{hostname}/{TOKEN}"
+    logger.info(f"Setting webhook to: {webhook_url}")
+
+    try:
+        # Start the bot using a webhook
+        updater.start_webhook(listen="0.0.0.0", port=PORT, url_path=TOKEN, webhook_url=webhook_url)
+        logger.info("Webhook set successfully!")
+    except Exception as e:
+        logger.error(f"Failed to set webhook: {e}")
+        logger.info("Falling back to polling...")
+        updater.start_polling()
+
+    updater.idle()
+
+if __name__ == '__main__':
+    main()
